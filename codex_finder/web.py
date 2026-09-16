@@ -127,6 +127,8 @@ INDEX_HTML = """<!doctype html>
   body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); }
   header { display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:14px 20px; border-bottom:1px solid var(--edge); background:var(--panel); position:sticky; top:0; z-index:5; }
   header h1 { font-size:18px; margin:0; color:var(--accent); letter-spacing:.5px; }
+  header .brand { display:flex; flex-direction:column; gap:2px; }
+  header .tagline { margin:0; color:var(--muted); font-size:12px; }
   header .spacer { flex:1; }
   label { color:var(--muted); font-size:13px; }
   select, button { font:inherit; color:var(--text); background:#1c2431; border:1px solid var(--edge); border-radius:6px; padding:7px 10px; }
@@ -165,7 +167,10 @@ INDEX_HTML = """<!doctype html>
 </head>
 <body>
 <header>
-  <h1>Elite Dangerous &mdash; Codex Finder</h1>
+  <div class="brand">
+    <h1>Elite Dangerous &mdash; Codex Finder</h1>
+    <p class="tagline">Finds Elite Dangerous Codex entries near you that you haven&rsquo;t yet discovered.</p>
+  </div>
   <div class="spacer"></div>
   <button class="refresh-all" onclick="refreshAll()">&#8635; Refresh all</button>
 </header>
