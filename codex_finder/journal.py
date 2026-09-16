@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-from . import codex
+from . import codex, config
 
 # Events that record the system the commander is in.
 _LOCATION_EVENTS = frozenset({"FSDJump", "Location", "CarrierJump"})
@@ -109,3 +110,87 @@ def _codex_name_to_subtype(name: str) -> str:
     which we drop so classification matches Spansh subtypes.
     """
     return name.split(" - ", 1)[0].strip()
+
+
+@dataclass
+class _FileContribution:
+    """What one journal file contributes: found entries and its last location."""
+
+    found: dict[str, set[str]]
+    last_location: CurrentLocation | None
+
+
+@dataclass
+class JournalState:
+    current: CurrentLocation | None
+    found: dict[str, set[str]]
+
+
+class JournalCache:
+    """Scans the journal once and memoises each file by (mtime, size).
+
+    Repeated scans only re-parse files that changed, which in practice is just
+    the journal file the game is currently appending to. A single pass builds
+    the found sets for every category and the current system, so callers do not
+    re-read the whole history per request.
+    """
+
+    def __init__(self, journal_dir: Path) -> None:
+        self._journal_dir = journal_dir
+        self._cache: dict[Path, tuple[float, int, _FileContribution]] = {}
+        self._lock = threading.Lock()
+
+    def scan(self) -> JournalState:
+        with self._lock:
+            found: dict[str, set[str]] = {cat: set() for cat in config.CATEGORIES}
+            current: CurrentLocation | None = None
+            for path in _journal_files(self._journal_dir):
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                cached = self._cache.get(path)
+                if cached and cached[0] == stat.st_mtime and cached[1] == stat.st_size:
+                    contribution = cached[2]
+                else:
+                    contribution = self._parse_file(path)
+                    self._cache[path] = (stat.st_mtime, stat.st_size, contribution)
+                for cat in config.CATEGORIES:
+                    found[cat] |= contribution.found[cat]
+                location = contribution.last_location
+                if location and (current is None or location.timestamp > current.timestamp):
+                    current = location
+            return JournalState(current=current, found=found)
+
+    @staticmethod
+    def _parse_file(path: Path) -> _FileContribution:
+        found: dict[str, set[str]] = {cat: set() for cat in config.CATEGORIES}
+        last_location: CurrentLocation | None = None
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    # Cheap pre-filter: skip the vast majority of events without
+                    # paying for a JSON parse.
+                    if '"StarSystem"' not in line and '"CodexEntry"' not in line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    event_type = event.get("event")
+                    if event_type in _LOCATION_EVENTS and event.get("StarSystem"):
+                        last_location = CurrentLocation(
+                            system=event["StarSystem"],
+                            timestamp=event.get("timestamp", ""),
+                        )
+                    elif event_type == "CodexEntry":
+                        name = event.get("Name_Localised") or event.get("Name")
+                        if not name:
+                            continue
+                        category = codex.classify_subtype(_codex_name_to_subtype(name))
+                        if category in found:
+                            found[category].add(codex.entry_key(name))
+        except OSError:
+            pass
+        return _FileContribution(found=found, last_location=last_location)
+

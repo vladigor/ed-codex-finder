@@ -57,6 +57,25 @@ On native Windows the directory is usually:
 C:\Users\<name>\Saved Games\Frontier Developments\Elite Dangerous
 ```
 
+## Web UI
+
+A local web app presents all three categories side by side (Biology first):
+
+```bash
+python codex-finder-web.py            # then open http://127.0.0.1:8765
+python codex-finder-web.py --port 9000 --journal-dir "/path/to/Elite Dangerous"
+```
+
+- One column per category, each with its own refresh button (nothing
+  auto-refreshes, so it never hits Spansh until you ask it to).
+- A per-column search-distance dropdown (500 – 20000 ly), defaulting to 500 ly
+  for biology and 10000 ly for clouds and anomalies.
+- Results and the chosen distances are saved in your browser's `localStorage`,
+  so reopening the page shows your last findings (with a relative "updated"
+  time, marked stale after 30 minutes) instead of running a fresh search.
+- Each result system has a copy-to-clipboard button for quick pasting into the
+  galaxy map.
+
 ## How it works
 
 1. **Current system** – the newest journal event carrying a `StarSystem`

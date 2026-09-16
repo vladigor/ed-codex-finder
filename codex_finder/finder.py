@@ -7,9 +7,10 @@ from dataclasses import dataclass, field
 from . import codex, config
 from .spansh import SpanshClient
 
-# Safety cap so a broad search cannot page forever.
-_MAX_PAGES = 15
-_PAGE_SIZE = 50
+# Safety cap so a broad search cannot page forever. Larger pages mean fewer
+# rate-limited round-trips when nearby bodies mostly hold already-found entries.
+_MAX_PAGES = 12
+_PAGE_SIZE = 100
 
 
 @dataclass

@@ -17,6 +17,7 @@ import json
 import time
 import urllib.error
 import urllib.request
+import threading
 from pathlib import Path
 
 from . import config
@@ -36,6 +37,8 @@ class SpanshClient:
         self._min_interval = min_interval
         self._cache_dir = cache_dir
         self._last_request_at = 0.0
+        # Serialises requests so the rate limit holds across web UI threads.
+        self._lock = threading.Lock()
 
     # -- low level ----------------------------------------------------------
     def _throttle(self) -> None:
@@ -49,21 +52,22 @@ class SpanshClient:
         # built from constants in config, but this makes the boundary explicit.
         if not url.startswith(config.SPANSH_BASE_URL + "/"):
             raise SpanshError(f"Refusing to call non-Spansh URL: {url}")
-        self._throttle()
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         headers = {"User-Agent": config.USER_AGENT}
         if data is not None:
             headers["Content-Type"] = "application/json"
         request = urllib.request.Request(url, data=data, headers=headers)
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                body = response.read().decode("utf-8")
-        except urllib.error.HTTPError as exc:
-            raise SpanshError(f"Spansh HTTP {exc.code} for {url}") from exc
-        except urllib.error.URLError as exc:
-            raise SpanshError(f"Could not reach Spansh: {exc.reason}") from exc
-        finally:
-            self._last_request_at = time.monotonic()
+        with self._lock:
+            self._throttle()
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    body = response.read().decode("utf-8")
+            except urllib.error.HTTPError as exc:
+                raise SpanshError(f"Spansh HTTP {exc.code} for {url}") from exc
+            except urllib.error.URLError as exc:
+                raise SpanshError(f"Could not reach Spansh: {exc.reason}") from exc
+            finally:
+                self._last_request_at = time.monotonic()
 
         try:
             parsed = json.loads(body)
