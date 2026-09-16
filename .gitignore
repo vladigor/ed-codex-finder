@@ -1,0 +1,10 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+
+# Local Spansh field-value cache
+.cache/
+
+# Virtual environments
+.venv/
+venv/
