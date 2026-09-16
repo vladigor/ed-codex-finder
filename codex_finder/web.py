@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import mimetypes
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,6 +29,10 @@ UI_CATEGORIES = (
 )
 DISTANCE_OPTIONS = (500, 1000, 2000, 5000, 10000, 20000)
 DEFAULT_DISTANCE = 1000
+
+# Genus thumbnails downloaded from ed-dsn.net's Exobiological Flora page, served
+# from codex_finder/assets/biology/ at /assets/biology/<file>.
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
 class _App:
@@ -90,7 +95,20 @@ def _make_handler(app: _App):
             if parsed.path == "/api/search":
                 self._handle_search(parse_qs(parsed.query))
                 return
+            if parsed.path.startswith("/assets/"):
+                self._serve_asset(parsed.path)
+                return
             self._send_json({"error": "Not found"}, status=404)
+
+        def _serve_asset(self, path: str) -> None:
+            rel = path[len("/assets/"):]
+            target = (ASSETS_DIR / rel).resolve()
+            # Prevent path traversal outside the assets directory.
+            if ASSETS_DIR not in target.parents or not target.is_file():
+                self._send_json({"error": "Not found"}, status=404)
+                return
+            content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            self._send(target.read_bytes(), content_type=content_type)
 
         def _handle_search(self, query: dict) -> None:
             category = query.get("category", [""])[0]
@@ -136,7 +154,8 @@ INDEX_HTML = """<!doctype html>
   button:hover:not(:disabled) { border-color:var(--accent); }
   button:disabled { opacity:.5; cursor:default; }
   .refresh-all { color:var(--accent); border-color:var(--accent); background:transparent; }
-  .columns { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; padding:16px 20px; align-items:start; }
+  .columns { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px 20px; align-items:start; }
+  .stack { display:flex; flex-direction:column; gap:16px; }
   @media (max-width: 900px) { .columns { grid-template-columns:1fr; } }
   .column { background:var(--panel); border:1px solid var(--edge); border-radius:10px; overflow:hidden; }
   .col-head { display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid var(--edge); }
@@ -153,8 +172,10 @@ INDEX_HTML = """<!doctype html>
   .rank { color:var(--muted); font-variant-numeric:tabular-nums; min-width:1.4em; }
   .sys-head .name { font-weight:600; }
   .sys-head .dist { margin-left:auto; color:var(--accent2); font-variant-numeric:tabular-nums; }
-  .results ul { margin:4px 0 0 0; padding-left:26px; }
-  .results li { font-size:13px; margin:2px 0; }
+  .results ul { margin:4px 0 0 0; padding-left:0; list-style:none; }
+  .results li { display:flex; align-items:center; gap:8px; font-size:13px; margin:4px 0; }
+  .thumb { width:100px; height:80px; border-radius:5px; object-fit:cover; border:1px solid var(--edge); background:#0b0e14; flex:none; }
+  .thumb.placeholder { visibility:hidden; }
   .col-head .dist-sel { padding:4px 7px; font-size:12px; }
   .col-sub { padding:2px 14px 10px; }
   .col-sub .sys { color:var(--muted); font-size:12px; }
@@ -184,6 +205,27 @@ const NEAREST = 10;
 const STORE_RESULTS = 'codexFinder.results.v1';
 const STORE_DISTANCES = 'codexFinder.distances.v1';
 const STALE_MS = 30 * 60 * 1000;
+
+// Genus -> thumbnail file (sourced from ed-dsn.net Exobiological Flora), served
+// from /assets/biology/. Longest genus names are matched first so multi-word
+// genera win over shorter substrings (e.g. "Crystalline Shard" before "Shards").
+const THUMBS = {
+  "Aleoida":"aleoida.png", "Amphora Plant":"amphora-plant.jpg", "Anemone":"anemone.png",
+  "Bacterium":"bacterium.png", "Bark Mounds":"bark-mounds.png", "Brain Tree":"brain-tree.jpg",
+  "Cactoida":"cactoida.png", "Clypeus":"clypeus.jpg", "Concha":"concha.jpg",
+  "Crystalline Shard":"crystalline-shard.png", "Electricae":"electricae.jpg",
+  "Fonticulua":"fonticulua.jpg", "Frutexa":"frutexa.jpg", "Fumerola":"fumerola.jpg",
+  "Fungoida":"fungoida.jpg", "Osseus":"osseus.jpg", "Recepta":"recepta.png",
+  "Stratum":"stratum.jpg", "Tubers":"tubers.png", "Tubus":"tubus.jpg", "Tussock":"tussock.jpg"
+};
+const THUMB_GENERA = Object.keys(THUMBS).sort((a, b) => b.length - a.length);
+
+function thumbFor(name) {
+  for (const genus of THUMB_GENERA) {
+    if (name.includes(genus)) return '/assets/biology/' + THUMBS[genus];
+  }
+  return null;
+}
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -221,11 +263,10 @@ function relTime(ts) {
   return Math.round(h / 24) + 'd ago';
 }
 
-function buildUI() {
-  document.getElementById('columns').innerHTML = CATEGORIES.map(cat => {
-    const chosen = distanceFor(cat);
-    const opts = DISTANCES.map(d => `<option value="${d}" ${String(d)===String(chosen)?'selected':''}>${d.toLocaleString()} ly</option>`).join('');
-    return `
+function colHtml(cat) {
+  const chosen = distanceFor(cat);
+  const opts = DISTANCES.map(d => `<option value="${d}" ${String(d)===String(chosen)?'selected':''}>${d.toLocaleString()} ly</option>`).join('');
+  return `
     <section class="column" data-col="${cat}">
       <div class="col-head">
         <h2>${cat}</h2>
@@ -236,7 +277,13 @@ function buildUI() {
       <div class="col-sub"><span class="sys"></span></div>
       <div class="results"><p class="muted">Press &#8635; to search.</p></div>
     </section>`;
-  }).join('');
+}
+
+function buildUI() {
+  // Biology takes the left 50%; cloud and anomalies stack in the right 50%.
+  document.getElementById('columns').innerHTML =
+    colHtml('biology') +
+    `<div class="stack">${colHtml('cloud')}${colHtml('anomalies')}</div>`;
   document.addEventListener('click', onCopyClick);
   restore();
 }
@@ -299,7 +346,13 @@ function render(cat, data) {
         <button class="copy-btn" data-copy="${esc(s.system)}" title="Copy system name" aria-label="Copy system name"><svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><path fill="currentColor" d="M384 336H192c-8.8 0-16-7.2-16-16V64c0-8.8 7.2-16 16-16l140.1 0L400 115.9V320c0 8.8-7.2 16-16 16zM192 384H384c35.3 0 64-28.7 64-64V115.9c0-12.7-5.1-24.9-14.1-33.9L366.1 14.1c-9-9-21.2-14.1-33.9-14.1H192c-35.3 0-64 28.7-64 64V320c0 35.3 28.7 64 64 64zM64 128c-35.3 0-64 28.7-64 64V448c0 35.3 28.7 64 64 64H256c35.3 0 64-28.7 64-64V416H272v32c0 8.8-7.2 16-16 16H64c-8.8 0-16-7.2-16-16V192c0-8.8 7.2-16 16-16H96V128H64z"></path></svg></button>
         <span class="dist">${s.distance.toLocaleString()} ly</span>
       </div>
-      <ul>${s.entries.map(e => `<li>${esc(e.name)} <span class="muted">[${esc(e.body)}]</span></li>`).join('')}</ul>
+      <ul>${s.entries.map(e => {
+        const thumb = cat === 'biology' ? thumbFor(e.name) : null;
+        const img = thumb
+          ? `<img class="thumb" src="${esc(thumb)}" alt="" loading="lazy">`
+          : (cat === 'biology' ? `<span class="thumb placeholder"></span>` : '');
+        return `<li>${img}<span>${esc(e.name)} <span class="muted">[${esc(e.body)}]</span></span></li>`;
+      }).join('')}</ul>
     </div>`).join('');
 }
 
