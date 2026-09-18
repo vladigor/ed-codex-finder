@@ -9,7 +9,7 @@ hold new entries.
 Supported categories:
 
 - `biology` – organic life forms (Codex "Organic Structures")
-- `cloud` – Lagrange clouds and storm clouds
+- `cloud` – Lagrange clouds, storm clouds and nested cloud Mollusc entries
 - `anomalies` – Lagrange anomalies
 
 ## Requirements
@@ -105,6 +105,7 @@ Built up in stages, as described in `initial_prompt.md`:
 - Species that come in colours (e.g. `Tubus`) are only reported when Spansh has
   recorded the colour; species with a single Codex entry (e.g. `Tubers`) are
   always reported.
-- Cloud and anomaly Codex names map directly to Spansh landmark subtypes.
+- Cloud and anomaly Codex names map directly to Spansh landmark subtypes; the
+  Cloud search also includes Mollusc subtypes from the in-game Cloud hierarchy.
 - If your current system is not in Spansh's galaxy database the search cannot
   run; try again from a catalogued system.

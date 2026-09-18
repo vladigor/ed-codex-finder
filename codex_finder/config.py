@@ -64,6 +64,15 @@ CATEGORY_ALIASES = {
 
 CATEGORIES = (CATEGORY_BIOLOGY, CATEGORY_CLOUD, CATEGORY_ANOMALIES)
 
+# Spansh subtype tokens that belong to the Codex "Cloud" hierarchy. In-game
+# this includes Lagrange clouds as well as nested Mollusc entries.
+CLOUD_TYPES = frozenset(
+    {
+        "Cloud",
+        "Mollusc",
+    }
+)
+
 # Spansh "landmark type" tokens that represent biological (Codex "Organic
 # Structures") life forms. A landmark subtype belongs to Biology when its name
 # contains one of these tokens. Derived from the live Spansh
@@ -91,7 +100,6 @@ BIOLOGY_TYPES = frozenset(
         "Fumerola",
         "Fungoida",
         "Gyre",
-        "Mollusc",
         "Osseus",
         "Peduncle",
         "Quadripartite",
@@ -110,7 +118,7 @@ BIOLOGY_TYPES = frozenset(
 # Biology genera (Spansh landmark "type" values) whose Codex entries come in
 # colour variants. When Spansh reports one of these without a colour the data is
 # simply incomplete, so such landmarks are omitted rather than shown colourless.
-# Genera not listed here (e.g. Tubers, Bark Mounds, molluscs) have a single Codex
+# Genera not listed here (e.g. Tubers, Bark Mounds) have a single Codex
 # entry and no colour.
 COLOUR_VARIANT_TYPES = frozenset(
     {

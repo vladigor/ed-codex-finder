@@ -201,7 +201,7 @@ const CATEGORIES = ["biology", "cloud", "anomalies"];
 const DISTANCES = [500, 1000, 2000, 5000, 10000, 20000];
 const DEFAULT_DISTANCES = { biology: 500, cloud: 10000, anomalies: 10000 };
 const ESTIMATES = { biology: "about 20-30s", cloud: "about 5s", anomalies: "about 5s" };
-const NEAREST = 10;
+const NEAREST = { biology: 10, cloud: 100, anomalies: 100 };
 const STORE_RESULTS = 'codexFinder.results.v1';
 const STORE_DISTANCES = 'codexFinder.distances.v1';
 const STALE_MS = 30 * 60 * 1000;
@@ -311,7 +311,7 @@ async function refresh(cat) {
   body.innerHTML = `<p class="muted">Please be patient &mdash; the ${cat} search typically takes ${ESTIMATES[cat]}&hellip;</p>`;
   btn.disabled = true;
   try {
-    const resp = await fetch(`/api/search?category=${cat}&within=${within}&nearest=${NEAREST}`);
+    const resp = await fetch(`/api/search?category=${cat}&within=${within}&nearest=${NEAREST[cat]}`);
     const data = await resp.json();
     if (!resp.ok) { body.innerHTML = `<p class="error">${esc(data.error || 'Error')}</p>`; return; }
     data.savedAt = Date.now();

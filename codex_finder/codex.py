@@ -26,12 +26,14 @@ def classify_subtype(subtype: str) -> str | None:
     """Return the category for a Spansh landmark subtype, or ``None`` to ignore.
 
     ``subtype`` is a value such as ``"Bacterium Aurasus"``,
-    ``"Caeruleum Lagrange Cloud"`` or ``"E04-Type Anomaly"``.
+    ``"Caeruleum Lagrange Cloud"``, ``"Lividum Bullet Mollusc"`` or
+    ``"E04-Type Anomaly"``.
     """
     if "Anomaly" in subtype:
         return config.CATEGORY_ANOMALIES
-    if "Cloud" in subtype:
-        return config.CATEGORY_CLOUD
+    for token in config.CLOUD_TYPES:
+        if token in subtype:
+            return config.CATEGORY_CLOUD
     for token in config.BIOLOGY_TYPES:
         if token in subtype:
             return config.CATEGORY_BIOLOGY
