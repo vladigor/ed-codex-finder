@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from . import codex, config
+from .canonn import CanonnClient
 from .spansh import SpanshClient
 
 # Safety cap so a broad search cannot page forever. Larger pages mean fewer
 # rate-limited round-trips when nearby bodies mostly hold already-found entries.
 _MAX_PAGES = 12
 _PAGE_SIZE = 100
+_canonn_client = CanonnClient()
 
 
 @dataclass
@@ -114,6 +116,29 @@ def find_new_codex_bodies(
         if page + 1 >= response.get("count", 0) / _PAGE_SIZE:
             break
 
-    ordered = [systems[name] for name in order]
+    if category == config.CATEGORY_CLOUD and reference_coords is not None:
+        for subtype in wanted:
+            reports = _canonn_client.nearest_codex(
+                reference_coords=reference_coords,
+                name=subtype,
+                limit=top_n,
+            )
+            for report in reports:
+                name = codex.entry_key(report.get("english_name", ""))
+                if name != subtype or name in found:
+                    continue
+                system_name = report.get("system")
+                if not system_name:
+                    continue
+                distance = float(report["distance"])
+                if max_distance is not None and distance > max_distance:
+                    continue
+                entry = systems.get(system_name)
+                if entry is None:
+                    entry = SystemResult(system=system_name, distance=distance)
+                    systems[system_name] = entry
+                entry.new_entries.setdefault(name, "body not recorded (Canonn)")
+
+    ordered = list(systems.values())
     ordered.sort(key=lambda r: r.distance)
     return ordered[:top_n]

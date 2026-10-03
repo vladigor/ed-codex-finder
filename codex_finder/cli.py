@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from . import config
+from .canonn import CanonnError
 from .codex import normalise_category
 from .finder import SystemResult, find_new_codex_bodies
 from .journal import find_current_system, find_found_entries
@@ -129,6 +130,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     except SpanshError as exc:
         print(f"Spansh query failed: {exc}", file=sys.stderr)
+        return 1
+    except CanonnError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
 
     _print_results(category, location.system, len(found), results, max_distance)

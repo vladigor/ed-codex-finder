@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import config
+from .canonn import CanonnError
 from .codex import normalise_category
 from .finder import find_new_codex_bodies
 from .journal import JournalCache
@@ -125,6 +126,8 @@ def _make_handler(app: _App):
                 self._send_json({"error": str(exc)}, status=400)
             except SpanshError as exc:
                 self._send_json({"error": f"Spansh query failed: {exc}"}, status=502)
+            except CanonnError as exc:
+              self._send_json({"error": str(exc)}, status=502)
             except RuntimeError as exc:
                 self._send_json({"error": str(exc)}, status=409)
 

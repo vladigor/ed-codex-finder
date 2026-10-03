@@ -1,46 +1,53 @@
 # codex-finder
 
-A Python CLI that finds Elite Dangerous **Codex** entries you have *not* yet
-discovered, ordered by distance from your current system. It reads your local
-game journal to learn where you are and what you have already found, then queries
+A local web app and Python CLI that find Elite Dangerous **Codex** entries you
+have *not* yet discovered, ordered by distance from your current system. They
+read your local game journal to learn where you are and what you have already
+found, then query
 the [Spansh](https://spansh.co.uk/bodies) bodies API for the nearest bodies that
-hold new entries.
+hold new entries. Cloud searches also use Canonn Codex reports, the same source
+used by SRV Survey's nearest-entry search, to include sites absent from Spansh.
 
 Supported categories:
 
 - `biology` – organic life forms (Codex "Organic Structures")
-- `cloud` – Lagrange clouds, storm clouds and nested cloud Mollusc entries
+- `cloud` – Lagrange clouds, storm clouds, Molluscs, pods, trees and crystals
 - `anomalies` – Lagrange anomalies
 
 ## Requirements
 
 - Python 3.10+
 - No third-party packages (standard library only)
-- Network access to `spansh.co.uk`
+- Network access to `spansh.co.uk` and, for cloud searches,
+  `us-central1-canonn-api-236217.cloudfunctions.net`
 
-## Usage
+## Web Interface
+
+Start the local server:
 
 ```bash
-python codex-finder.py biology
-python codex-finder.py cloud --nearest 5
-python codex-finder.py biology --nearest 5 --within 400ly
-python codex-finder.py anomalies --journal-dir "/path/to/Elite Dangerous"
+python codex-finder-web.py
 ```
 
-`--within` bounds the search radius (making the query faster). When omitted it
-defaults to 500ly for biology and 10000ly for clouds and anomalies.
+Then open [http://127.0.0.1:8765](http://127.0.0.1:8765) in your browser.
 
-Example output:
+- Biology appears on the left, with clouds and anomalies stacked on the right.
+  Each category has its own refresh button; searches run only when requested.
+- Each category has a search-distance dropdown (500 to 20000 ly), defaulting
+  to 500 ly for biology and 10000 ly for clouds and anomalies.
+- Results and chosen distances are saved in your browser's `localStorage`.
+  Reopening the page restores the last results without another search, and
+  results are marked stale after 30 minutes.
+- Each result system has a copy-to-clipboard button for the galaxy map.
 
-```
-Current system: HIP 15304
-Category: biology (312 entries already in your journal)
+Cloud searches can take several minutes because they query both Spansh and
+Canonn. Saved results are not automatically refreshed after you travel or find
+an entry; use the category's refresh button to update them.
 
-Nearest systems with new biology Codex entries:
+To use a different port or journal directory:
 
- 1. Lushertha  (21.31 ly)
-      - Stratum Paleas  [Lushertha A 5 a]
-      ...
+```bash
+python codex-finder-web.py --port 9000 --journal-dir "/path/to/Elite Dangerous"
 ```
 
 ### Configuring the journal directory
@@ -57,24 +64,21 @@ On native Windows the directory is usually:
 C:\Users\<name>\Saved Games\Frontier Developments\Elite Dangerous
 ```
 
-## Web UI
+## Command-Line Interface
 
-A local web app presents all three categories side by side (Biology first):
+For terminal use:
 
 ```bash
-python codex-finder-web.py            # then open http://127.0.0.1:8765
-python codex-finder-web.py --port 9000 --journal-dir "/path/to/Elite Dangerous"
+python codex-finder.py biology
+python codex-finder.py cloud --nearest 5
+python codex-finder.py biology --nearest 5 --within 400ly
+python codex-finder.py anomalies --journal-dir "/path/to/Elite Dangerous"
 ```
 
-- One column per category, each with its own refresh button (nothing
-  auto-refreshes, so it never hits Spansh until you ask it to).
-- A per-column search-distance dropdown (500 – 20000 ly), defaulting to 500 ly
-  for biology and 10000 ly for clouds and anomalies.
-- Results and the chosen distances are saved in your browser's `localStorage`,
-  so reopening the page shows your last findings (with a relative "updated"
-  time, marked stale after 30 minutes) instead of running a fresh search.
-- Each result system has a copy-to-clipboard button for quick pasting into the
-  galaxy map.
+`--nearest` sets the maximum number of systems to show (default 10).
+`--within` bounds the search radius. When omitted it defaults to 500 ly for
+biology and 10000 ly for clouds and anomalies. Both interfaces use the same
+search logic and journal configuration.
 
 ## How it works
 
@@ -86,17 +90,16 @@ python codex-finder-web.py --port 9000 --journal-dir "/path/to/Elite Dangerous"
    landmark's colour in its `variant` field, so a species you have in one colour
    still counts as new in a colour you are missing.
 3. **Spansh query** – the full set of landmark subtypes for the category is
-   fetched once (and cached for a week), the already-found entries are
-   subtracted, and the remainder is used to search for the nearest bodies. Each
-   body's landmarks are compared against your found set to list only the new
-   entries. Requests are rate-limited to one per second.
-
-## Proof-of-concept scripts
-
-Built up in stages, as described in `initial_prompt.md`:
-
-- [`poc/poc1_current_system.py`](poc/poc1_current_system.py) – prints the current system.
-- [`poc/poc2_codex_unfound.py`](poc/poc2_codex_unfound.py) – lists unfound Cloud entries.
+  fetched once (and cached for a week). Cloud and anomaly searches subtract
+  already-found subtypes; biology searches query all species and filter found
+  colour variants from each body's landmarks. Only new entries are listed.
+  Requests are rate-limited to one per second.
+4. **Cloud coverage** – when journal coordinates are available, Canonn is
+  queried for the nearest systems for each missing cloud subtype. Reports are
+  filtered to the requested radius, merged with Spansh results, and sorted
+  before the nearest-system limit is applied. This adds one rate-limited
+  request per missing subtype. Canonn failures are reported rather than
+  silently returning incomplete results.
 
 ## Notes and limitations
 
@@ -107,5 +110,13 @@ Built up in stages, as described in `initial_prompt.md`:
   always reported.
 - Cloud and anomaly Codex names map directly to Spansh landmark subtypes; the
   Cloud search also includes Mollusc subtypes from the in-game Cloud hierarchy.
-- If your current system is not in Spansh's galaxy database the search cannot
-  run; try again from a catalogued system.
+- Canonn cloud reports supply system names, not body names. These entries show
+  `body not recorded (Canonn)` unless Spansh supplies a body for the same entry
+  in that system. Without journal coordinates, only Spansh is used.
+- `--nearest` limits systems across all missing entries, not per species.
+  Increasing it may reveal a particular species below the nearest-system cutoff.
+- Biology and anomaly searches use Spansh only, so reports missing from its
+  database will not appear. Cloud searches supplement Spansh but still depend
+  on the coverage of both sources and Spansh's subtype catalogue.
+- Journal coordinates allow searches from a current system not catalogued by
+  Spansh. If coordinates are unavailable, Spansh must recognise the system name.

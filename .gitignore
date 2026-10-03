@@ -8,3 +8,6 @@ __pycache__/
 # Virtual environments
 .venv/
 venv/
+
+# local clone of srvsurvey for research
+research/srvsurvey
