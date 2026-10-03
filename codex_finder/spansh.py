@@ -94,6 +94,7 @@ class SpanshClient:
         self,
         *,
         reference_system: str,
+        reference_coords: tuple[float, float, float] | None = None,
         landmark_subtypes: list[str],
         max_distance: float | None = None,
         size: int = 50,
@@ -114,6 +115,9 @@ class SpanshClient:
             "size": size,
             "page": page,
         }
+        if reference_coords is not None:
+            x, y, z = reference_coords
+            payload["reference_coords"] = {"x": x, "y": y, "z": z}
         return self._request(config.SPANSH_SEARCH_URL, payload=payload)
 
     # -- cache --------------------------------------------------------------

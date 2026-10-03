@@ -121,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         results = find_new_codex_bodies(
             client,
             reference_system=location.system,
+            reference_coords=location.star_pos,
             category=category,
             found=found,
             top_n=args.nearest,

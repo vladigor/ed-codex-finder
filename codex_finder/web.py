@@ -51,6 +51,7 @@ class _App:
         results = find_new_codex_bodies(
             self.client,
             reference_system=state.current.system,
+            reference_coords=state.current.star_pos,
             category=cat,
             found=found,
             top_n=nearest,

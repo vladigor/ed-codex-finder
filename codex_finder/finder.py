@@ -34,6 +34,7 @@ def find_new_codex_bodies(
     client: SpanshClient,
     *,
     reference_system: str,
+    reference_coords: tuple[float, float, float] | None = None,
     category: str,
     found: set[str],
     top_n: int = config.TOP_N_SYSTEMS,
@@ -63,6 +64,7 @@ def find_new_codex_bodies(
     for page in range(_MAX_PAGES):
         response = client.search_bodies(
             reference_system=reference_system,
+            reference_coords=reference_coords,
             landmark_subtypes=wanted,
             max_distance=max_distance,
             size=_PAGE_SIZE,

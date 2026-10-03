@@ -34,6 +34,17 @@ _ISO_JOURNAL_RE = re.compile(
 class CurrentLocation:
     system: str
     timestamp: str
+    star_pos: tuple[float, float, float] | None = None
+
+
+def _star_pos(event: dict) -> tuple[float, float, float] | None:
+    value = event.get("StarPos")
+    if not isinstance(value, list) or len(value) != 3:
+        return None
+    try:
+        return (float(value[0]), float(value[1]), float(value[2]))
+    except (TypeError, ValueError):
+        return None
 
 
 def _journal_files(journal_dir: Path) -> list[Path]:
@@ -76,6 +87,7 @@ def find_current_system(journal_dir: Path) -> CurrentLocation | None:
                 latest = CurrentLocation(
                     system=event["StarSystem"],
                     timestamp=event.get("timestamp", ""),
+                    star_pos=_star_pos(event),
                 )
         if latest is not None:
             return latest
@@ -182,6 +194,7 @@ class JournalCache:
                         last_location = CurrentLocation(
                             system=event["StarSystem"],
                             timestamp=event.get("timestamp", ""),
+                            star_pos=_star_pos(event),
                         )
                     elif event_type == "CodexEntry":
                         name = event.get("Name_Localised") or event.get("Name")

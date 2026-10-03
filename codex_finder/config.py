@@ -65,11 +65,29 @@ CATEGORY_ALIASES = {
 CATEGORIES = (CATEGORY_BIOLOGY, CATEGORY_CLOUD, CATEGORY_ANOMALIES)
 
 # Spansh subtype tokens that belong to the Codex "Cloud" hierarchy. In-game
-# this includes Lagrange clouds as well as nested Mollusc entries.
+# this includes Lagrange clouds as well as nested Mollusc, Gyre Pod and crystal
+# entries found inside clouds.
 CLOUD_TYPES = frozenset(
     {
+        "Aster",
+        "Chalice Pod",
+        "Calcite Plates",
         "Cloud",
+        "Collared Pod",
+        "Gyre Pod",
+        "Gyre",
+        "Ice Crystals",
+        "Lagrange Cloud",
+        "Metallic Crystals",
+        "Mineral Spheres",
         "Mollusc",
+        "Peduncle",
+        "Quadripartite",
+        "Rhizome",
+        "Silicate Crystals",
+        "Stolon",
+        "Storm Cloud",
+        "Void",
     }
 )
 
