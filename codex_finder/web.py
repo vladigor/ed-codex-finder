@@ -209,6 +209,7 @@ const NEAREST = { biology: 10, cloud: 25, anomalies: 25 };
 const STORE_RESULTS = 'codexFinder.results.v1';
 const STORE_DISTANCES = 'codexFinder.distances.v1';
 const STALE_MS = 30 * 60 * 1000;
+const displayedResults = {};
 
 // Genus -> thumbnail file (sourced from ed-dsn.net Exobiological Flora), served
 // from /assets/biology/. Longest genus names are matched first so multi-word
@@ -328,7 +329,7 @@ async function refresh(cat) {
   }
 }
 
-function render(cat, data) {
+function updateNotice(cat, data) {
   const col = document.querySelector(`[data-col="${cat}"]`);
   const sysEl = col.querySelector('.sys');
   const stale = data.savedAt && (Date.now() - data.savedAt > STALE_MS);
@@ -337,6 +338,18 @@ function render(cat, data) {
     ? ` \u00b7 updated ${relTime(data.savedAt)}${stale ? ' ⚠️' : ''}`
     : '';
   sysEl.textContent = `${data.current_system} \u00b7 ${data.found_count.toLocaleString()} logged${when}`;
+}
+
+function refreshNotices() {
+  CATEGORIES.forEach(cat => {
+    if (displayedResults[cat]) updateNotice(cat, displayedResults[cat]);
+  });
+}
+
+function render(cat, data) {
+  displayedResults[cat] = data;
+  updateNotice(cat, data);
+  const col = document.querySelector(`[data-col="${cat}"]`);
   const body = col.querySelector('.results');
   if (!data.results.length) {
     body.innerHTML = `<p class="muted">No new entries within ${Number(data.within).toLocaleString()} ly.</p>`;
@@ -363,6 +376,11 @@ function render(cat, data) {
 function refreshAll() { CATEGORIES.forEach(refresh); }
 
 buildUI();
+setInterval(refreshNotices, 60 * 1000);
+window.addEventListener('focus', refreshNotices);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshNotices();
+});
 </script>
 </body>
 </html>
