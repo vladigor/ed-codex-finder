@@ -47,6 +47,7 @@ def find_new_codex_bodies(
     ``found`` is the set of entry keys the commander already has for ``category``.
     ``max_distance`` (light years) caps the search radius when given.
     """
+    found = {codex.entry_key(name) for name in found}
     universe = category_universe(client, category)
     if category == config.CATEGORY_BIOLOGY:
         # Biology is tracked per colour variant, which Spansh returns on each
@@ -56,7 +57,7 @@ def find_new_codex_bodies(
         wanted = sorted(universe)
     else:
         # Cloud and anomaly entries have no colour, so a found subtype is done.
-        wanted = sorted(universe - found)
+        wanted = sorted(subtype for subtype in universe if codex.entry_key(subtype) not in found)
     if not wanted:
         return []
 
@@ -125,7 +126,7 @@ def find_new_codex_bodies(
             )
             for report in reports:
                 name = codex.entry_key(report.get("english_name", ""))
-                if name != subtype or name in found:
+                if name != codex.entry_key(subtype) or name in found:
                     continue
                 system_name = report.get("system")
                 if not system_name:

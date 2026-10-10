@@ -49,7 +49,8 @@ def entry_key(name: str) -> str:
     full name and compare at the species+colour level - see
     :func:`spansh_entry_key`.
     """
-    return name.strip()
+    name = name.strip()
+    return {"Albens Bell Mollusc": "Albulus Bell Mollusc"}.get(name, name)
 
 
 def spansh_entry_key(subtype: str, variant: str | None) -> str:
@@ -60,5 +61,5 @@ def spansh_entry_key(subtype: str, variant: str | None) -> str:
     Horizons organics without a colour have no variant, so the subtype is used
     verbatim.
     """
-    return f"{subtype} - {variant}" if variant else subtype
+    return entry_key(f"{subtype} - {variant}" if variant else subtype)
 

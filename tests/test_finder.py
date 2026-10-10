@@ -50,6 +50,35 @@ class CloudSearchTests(unittest.TestCase):
         self.assertEqual(self.search(found={POD}), [])
         self.assertEqual([call.kwargs["name"] for call in self.nearest.call_args_list], ["Stolon Pod"])
 
+    def test_found_bell_mollusc_alias_is_not_queried_or_returned(self):
+        self.spansh.landmark_subtypes.return_value = [POD, "Albens Bell Mollusc"]
+        self.spansh.search_bodies.return_value = {
+            "count": 1,
+            "results": [{"system_name": "Collected", "distance": 10, "landmarks": [{"subtype": "Albens Bell Mollusc"}]}],
+        }
+        for name in ("Albulus Bell Mollusc", "Albens Bell Mollusc"):
+            with self.subTest(found=name):
+                self.nearest.reset_mock()
+                results = self.search(found={name})
+                self.assertNotIn("Collected", [result.system for result in results])
+                self.assertEqual(self.spansh.search_bodies.call_args.kwargs["landmark_subtypes"], [POD])
+                self.assertEqual([call.kwargs["name"] for call in self.nearest.call_args_list], [POD])
+
+    def test_missing_bell_mollusc_uses_api_name_and_displays_journal_name(self):
+        self.spansh.landmark_subtypes.return_value = ["Albens Bell Mollusc"]
+        self.spansh.search_bodies.return_value = {
+            "count": 1,
+            "results": [{"system_name": "Spansh", "name": "Spansh 1", "distance": 10, "landmarks": [{"subtype": "Albens Bell Mollusc"}]}],
+        }
+        for name in ("Albens Bell Mollusc", "Albulus Bell Mollusc"):
+            with self.subTest(report=name):
+                self.nearest.side_effect = None
+                self.nearest.return_value = [{"english_name": name, "system": "Canonn", "distance": "20"}]
+                results = self.search()
+                self.assertEqual(self.spansh.search_bodies.call_args.kwargs["landmark_subtypes"], ["Albens Bell Mollusc"])
+                self.assertEqual(self.nearest.call_args.kwargs["name"], "Albens Bell Mollusc")
+                self.assertEqual([set(result.new_entries) for result in results], [{"Albulus Bell Mollusc"}] * 2)
+
     def test_merge_precedes_nearest_limit_and_preserves_body(self):
         self.spansh.search_bodies.return_value = {
             "count": 2,
