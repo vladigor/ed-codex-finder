@@ -108,6 +108,59 @@ class CloudSearchTests(unittest.TestCase):
             self.search()
 
 
+class BiologySearchTests(unittest.TestCase):
+    def test_anemones_are_not_buried_by_found_colour_variants(self):
+        spansh = Mock()
+        spansh.landmark_subtypes.return_value = [
+            "Puniceum Anemone", "Roseum Anemone", "Bark Mounds", "Stratum Tectonicas",
+        ]
+
+        def search_bodies(**kwargs):
+            if "Puniceum Anemone" in kwargs["landmark_subtypes"]:
+                return {"count": 2, "results": [
+                    {"system_name": "HD 99897", "name": "HD 99897 B 1 a", "distance": 802.23,
+                     "landmarks": [{"type": "Anemone", "subtype": "Puniceum Anemone"}]},
+                    {"system_name": "Roseum system", "name": "Roseum system 1", "distance": 900,
+                     "landmarks": [{"type": "Anemone", "subtype": "Roseum Anemone"}]},
+                ]}
+            return {"count": 10000, "results": [
+                {"system_name": "Collected", "distance": 100,
+                 "landmarks": [{"type": "Stratum", "subtype": "Stratum Tectonicas", "variant": "Green"}]},
+            ]}
+
+        spansh.search_bodies.side_effect = search_bodies
+        results = find_new_codex_bodies(
+            spansh, reference_system="HIP 72344", category=config.CATEGORY_BIOLOGY,
+            found={"Bark Mounds", "Stratum Tectonicas - Green"}, max_distance=2000,
+        )
+        self.assertEqual([result.system for result in results], ["HD 99897", "Roseum system"])
+        self.assertEqual(results[0].new_entries, {"Puniceum Anemone": "HD 99897 B 1 a"})
+        self.assertEqual(spansh.search_bodies.call_args_list[0].kwargs["landmark_subtypes"],
+                         ["Puniceum Anemone", "Roseum Anemone"])
+        self.assertTrue(all(call.kwargs["max_distance"] == 2000
+                            for call in spansh.search_bodies.call_args_list))
+
+    def test_batches_merge_before_nearest_limit(self):
+        spansh = Mock()
+        spansh.landmark_subtypes.return_value = ["Puniceum Anemone", "Tussock Capillum"]
+        spansh.search_bodies.side_effect = [
+            {"count": 1, "results": [
+                {"system_name": "Farther", "distance": 802,
+                 "landmarks": [{"subtype": "Puniceum Anemone"}]},
+            ]},
+            {"count": 1, "results": [
+                {"system_name": "Nearer", "distance": 100,
+                 "landmarks": [{"type": "Tussock", "subtype": "Tussock Capillum", "variant": "Green"}]},
+            ]},
+        ]
+        results = find_new_codex_bodies(
+            spansh, reference_system="HIP 72344", category=config.CATEGORY_BIOLOGY,
+            found=set(), top_n=1, max_distance=2000,
+        )
+        self.assertEqual([result.system for result in results], ["Nearer"])
+        self.assertEqual(spansh.search_bodies.call_count, 2)
+
+
 class CanonnClientTests(unittest.TestCase):
     def test_response_and_encoded_query(self):
         response = io.BytesIO(json.dumps({"nearest": [{"system": "Example"}]}).encode())
