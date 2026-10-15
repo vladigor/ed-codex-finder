@@ -11,3 +11,6 @@ venv/
 
 # local clone of srvsurvey for research
 research/srvsurvey
+
+# personal settings file
+personalization.json

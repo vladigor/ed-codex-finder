@@ -4,9 +4,11 @@ import unittest
 import urllib.error
 from unittest.mock import Mock, patch
 
-from codex_finder import config
+from codex_finder import codex, config
 from codex_finder.canonn import CanonnClient, CanonnError
-from codex_finder.finder import find_new_codex_bodies
+from codex_finder.cli import _print_results
+from codex_finder.finder import SearchStatus, SystemResult, find_new_codex_bodies
+from codex_finder.web import _App
 
 
 POD = "Purpureum Rhizome Pod"
@@ -109,6 +111,92 @@ class CloudSearchTests(unittest.TestCase):
 
 
 class BiologySearchTests(unittest.TestCase):
+    def setUp(self):
+        exclusions = patch("codex_finder.config.get_biology_excluded_species", return_value=set())
+        self.exclusions = exclusions.start()
+        self.addCleanup(exclusions.stop)
+
+    def test_exclusions_filter_queries_and_mixed_body_landmarks(self):
+        self.exclusions.return_value = {
+            "Anemone", "Electricae", "Fumerolas", "Fungoids", "Shards",
+            "Bacterium Aurasus",
+        }
+        excluded = [
+            "Puniceum Anemone", "Electricae Pluma", "Fumerola Aquatis",
+            "Fungoida Setisis", "Crystalline Shard", "Bacterium Aurasus",
+        ]
+        spansh = Mock()
+        spansh.landmark_subtypes.return_value = excluded + ["Tussock Capillum"]
+        spansh.search_bodies.return_value = {"count": 1, "results": [
+            {"system_name": "Mixed", "name": "Mixed 1", "distance": 10,
+             "landmarks": [{"subtype": name, "variant": "Green"}
+                           for name in excluded + ["Tussock Capillum"]]},
+        ]}
+        results = find_new_codex_bodies(
+            spansh, reference_system="Example", category=config.CATEGORY_BIOLOGY,
+            found=set(), max_distance=500,
+        )
+        self.assertEqual(spansh.search_bodies.call_args.kwargs["landmark_subtypes"],
+                         ["Tussock Capillum"])
+        self.assertEqual(results[0].new_entries, {"Tussock Capillum - Green": "Mixed 1"})
+
+    def test_all_excluded_skips_search(self):
+        self.exclusions.return_value = {"Anemone"}
+        spansh = Mock()
+        spansh.landmark_subtypes.return_value = ["Puniceum Anemone"]
+        self.assertEqual(find_new_codex_bodies(
+            spansh, reference_system="Example", category=config.CATEGORY_BIOLOGY,
+            found=set(),
+        ), [])
+        spansh.search_bodies.assert_not_called()
+
+    def test_page_cap_status_for_empty_and_partial_results(self):
+        for has_new in (False, True):
+            with self.subTest(has_new=has_new):
+                spansh = Mock()
+                spansh.landmark_subtypes.return_value = ["Tussock Capillum"]
+                spansh.search_bodies.return_value = {"count": 1300, "results": [
+                    {"system_name": "Example", "distance": 10,
+                     "landmarks": [{"type": "Tussock", "subtype": "Tussock Capillum",
+                                    "variant": "Red" if has_new else "Green"}]},
+                ]}
+                status = SearchStatus()
+                results = find_new_codex_bodies(
+                    spansh, reference_system="Example", category=config.CATEGORY_BIOLOGY,
+                    found={"Tussock Capillum - Green"}, status=status, max_distance=500,
+                )
+                self.assertTrue(status.limit_reached)
+                self.assertEqual(len(results), int(has_new))
+                self.assertEqual(spansh.search_bodies.call_count, 12)
+
+    def test_normal_stops_do_not_report_page_cap(self):
+        for count, variant, top_n, expected_pages in (
+            (0, None, 10, 1), (1200, "Green", 10, 12),
+            (1300, "Red", 1, 1), (1300, "Red", 1, 12),
+        ):
+            with self.subTest(count=count, variant=variant, expected_pages=expected_pages):
+                spansh = Mock()
+                spansh.landmark_subtypes.return_value = ["Tussock Capillum"]
+
+                def search_bodies(**kwargs):
+                    colour = variant
+                    if expected_pages == 12 and variant == "Red" and kwargs["page"] < 11:
+                        colour = "Green"
+                    return {"count": count, "results": [] if variant is None else [
+                        {"system_name": "Example", "distance": 10,
+                         "landmarks": [{"type": "Tussock", "subtype": "Tussock Capillum",
+                                        "variant": colour}]},
+                    ]}
+
+                spansh.search_bodies.side_effect = search_bodies
+                status = SearchStatus(limit_reached=True)
+                find_new_codex_bodies(
+                    spansh, reference_system="Example", category=config.CATEGORY_BIOLOGY,
+                    found={"Tussock Capillum - Green"}, status=status, top_n=top_n,
+                )
+                self.assertFalse(status.limit_reached)
+                self.assertEqual(spansh.search_bodies.call_count, expected_pages)
+
     def test_anemones_are_not_buried_by_found_colour_variants(self):
         spansh = Mock()
         spansh.landmark_subtypes.return_value = [
@@ -159,6 +247,85 @@ class BiologySearchTests(unittest.TestCase):
         )
         self.assertEqual([result.system for result in results], ["Nearer"])
         self.assertEqual(spansh.search_bodies.call_count, 2)
+
+
+class SearchStatusPresentationTests(unittest.TestCase):
+    def test_cli_distinguishes_capped_empty_and_partial_searches(self):
+        for results in ([], [SystemResult("Example", 10, {"New entry": "Body"})]):
+            with self.subTest(results=results), patch("sys.stdout", new_callable=io.StringIO) as output:
+                _print_results("biology", "Origin", 0, results, 500, search_limit_reached=True)
+                text = output.getvalue()
+                self.assertIn("Search limit reached", text)
+                self.assertNotIn("were found within", text)
+                if not results:
+                    self.assertIn("bodies examined", text)
+
+    def test_cli_normal_empty_search_keeps_radius_message(self):
+        with patch("sys.stdout", new_callable=io.StringIO) as output:
+            _print_results("biology", "Origin", 0, [], 500)
+            self.assertIn("were found within 500 ly", output.getvalue())
+            self.assertNotIn("Search limit reached", output.getvalue())
+
+    def test_web_response_propagates_search_status(self):
+        app = _App(config.DEFAULT_JOURNAL_DIR)
+        app.journal = Mock()
+        state = app.journal.scan.return_value
+        state.current.system = "Origin"
+        state.current.star_pos = None
+        state.found = {"biology": set()}
+        for capped in (False, True):
+            def search(client, **kwargs):
+                kwargs["status"].limit_reached = capped
+                return []
+
+            with self.subTest(capped=capped), patch("codex_finder.web.find_new_codex_bodies", side_effect=search):
+                response = app.search("biology", 500, 10)
+                self.assertEqual(response["search_limit_reached"], capped)
+                self.assertEqual(response["results"], [])
+
+
+class BiologyConfigTests(unittest.TestCase):
+    def test_supplied_groups_match_api_names(self):
+        names = {
+            "Amphora Plant": "Amphora Plant", "Anemone": "Roseum Anemone",
+            "Bark Mounds": "Bark Mounds", "Brain Tree": "Roseum Brain Tree",
+            "Electricae": "Electricae Radialem", "Fumerolas": "Fumerola Aquatis",
+            "Fungoids": "Fungoida Setisis", "Radicoida": "Radicoida Unica",
+            "Shards": "Crystalline Shard",
+        }
+        for group, subtype in names.items():
+            with self.subTest(group=group):
+                self.assertTrue(codex.biology_is_excluded(subtype, {group.lower()}))
+        self.assertFalse(codex.biology_is_excluded("Bacterium Aurasus", {"Bacter"}))
+        self.assertFalse(codex.biology_is_excluded("Bacterium Acies", {"Bacterium Aurasus"}))
+
+    def test_config_is_reread_and_can_be_overridden(self):
+        with patch.dict("os.environ", {"CODEX_FINDER_CONFIG": "/user/settings.json"}), patch(
+            "pathlib.Path.read_text", side_effect=[
+                '{"biology_excluded_species": [" Anemone "]}',
+                '{"biology_excluded_species": ["Electricae"]}',
+            ],
+        ) as read:
+            self.assertEqual(config.get_biology_excluded_species(), {"Anemone"})
+            self.assertEqual(config.get_biology_excluded_species(), {"Electricae"})
+            self.assertEqual(read.call_count, 2)
+
+    def test_missing_default_is_optional_but_missing_override_is_error(self):
+        with patch.dict("os.environ", {}, clear=True), patch(
+            "pathlib.Path.read_text", side_effect=FileNotFoundError,
+        ):
+            self.assertEqual(config.get_biology_excluded_species(), set())
+            with patch.dict("os.environ", {"CODEX_FINDER_CONFIG": "/missing.json"}):
+                with self.assertRaisesRegex(ValueError, "Configuration file not found"):
+                    config.get_biology_excluded_species()
+
+    def test_invalid_config_is_reported(self):
+        for content in ('{', '[]', '{"biology_excluded_species": "Anemone"}',
+                        '{"biology_excluded_species": [null]}',
+                        '{"biology_excluded_species": [" "]}'):
+            with self.subTest(content=content), patch("pathlib.Path.read_text", return_value=content):
+                with self.assertRaises(ValueError):
+                    config.get_biology_excluded_species()
 
 
 class CanonnClientTests(unittest.TestCase):

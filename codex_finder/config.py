@@ -6,8 +6,34 @@ the code can stay portable.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+
+DEFAULT_CONFIG_FILE = Path(__file__).resolve().parent.parent / "personalization.json"
+
+
+def get_biology_excluded_species() -> set[str]:
+    """Read user exclusions on each search; a missing default file is optional."""
+    override = os.environ.get("CODEX_FINDER_CONFIG")
+    path = Path(override).expanduser() if override else DEFAULT_CONFIG_FILE
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        if not override:
+            return set()
+        raise ValueError(f"Configuration file not found: {path}") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Could not read configuration {path}: {exc}") from exc
+    if not isinstance(settings, dict):
+        raise ValueError(f"Configuration {path} must be a JSON object")
+    excluded = settings.get("biology_excluded_species", [])
+    if not isinstance(excluded, list) or any(
+        not isinstance(name, str) or not name.strip() for name in excluded
+    ):
+        raise ValueError(f"biology_excluded_species in {path} must be a list of non-empty strings")
+    return {name.strip() for name in excluded}
+
 
 # ---------------------------------------------------------------------------
 # Journal location
@@ -126,7 +152,6 @@ BIOLOGY_TYPES = frozenset(
         "Shards",
         "Stolon",
         "Stratum",
-        "Toughened Spear Roots",
         "Tubers",
         "Tubus",
         "Tussock",

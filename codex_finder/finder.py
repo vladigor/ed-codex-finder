@@ -16,6 +16,11 @@ _canonn_client = CanonnClient()
 
 
 @dataclass
+class SearchStatus:
+    limit_reached: bool = False
+
+
+@dataclass
 class SystemResult:
     system: str
     distance: float
@@ -41,15 +46,24 @@ def find_new_codex_bodies(
     found: set[str],
     top_n: int = config.TOP_N_SYSTEMS,
     max_distance: float | None = None,
+    status: SearchStatus | None = None,
 ) -> list[SystemResult]:
     """Return up to ``top_n`` nearest systems that hold new Codex entries.
 
     ``found`` is the set of entry keys the commander already has for ``category``.
     ``max_distance`` (light years) caps the search radius when given.
+    ``status`` records whether any query batch stopped at the safety page cap.
     """
+    if status is not None:
+        status.limit_reached = False
     found = {codex.entry_key(name) for name in found}
     universe = category_universe(client, category)
     if category == config.CATEGORY_BIOLOGY:
+        excluded = config.get_biology_excluded_species()
+        universe = {
+            subtype for subtype in universe
+            if not codex.biology_is_excluded(subtype, excluded)
+        }
         coloured = {
             subtype for subtype in universe
             if any(token in subtype for token in config.COLOUR_VARIANT_TYPES)
@@ -115,6 +129,9 @@ def find_new_codex_bodies(
                 break
             if page + 1 >= response.get("count", 0) / _PAGE_SIZE:
                 break
+        else:
+            if status is not None:
+                status.limit_reached = True
 
     if category == config.CATEGORY_CLOUD and reference_coords is not None:
         for subtype in wanted:

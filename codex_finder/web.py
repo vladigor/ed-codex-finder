@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from . import config
 from .canonn import CanonnError
 from .codex import normalise_category
-from .finder import find_new_codex_bodies
+from .finder import SearchStatus, find_new_codex_bodies
 from .journal import JournalCache
 from .spansh import SpanshClient, SpanshError
 
@@ -49,6 +49,7 @@ class _App:
         if state.current is None:
             raise RuntimeError("Could not determine your current system from the journal.")
         found = state.found[cat]
+        status = SearchStatus()
         results = find_new_codex_bodies(
             self.client,
             reference_system=state.current.system,
@@ -57,12 +58,14 @@ class _App:
             found=found,
             top_n=nearest,
             max_distance=within,
+            status=status,
         )
         return {
             "category": cat,
             "current_system": state.current.system,
             "within": within,
             "found_count": len(found),
+            "search_limit_reached": status.limit_reached,
             "results": [
                 {
                     "system": r.system,
@@ -351,11 +354,16 @@ function render(cat, data) {
   updateNotice(cat, data);
   const col = document.querySelector(`[data-col="${cat}"]`);
   const body = col.querySelector('.results');
+  const warning = data.search_limit_reached
+    ? '<p class="muted" role="status">Search limit reached. Results may be incomplete within this radius.</p>'
+    : '';
   if (!data.results.length) {
-    body.innerHTML = `<p class="muted">No new entries within ${Number(data.within).toLocaleString()} ly.</p>`;
+    body.innerHTML = warning
+      ? warning + '<p class="muted">No new entries found in the bodies examined.</p>'
+      : `<p class="muted">No new entries within ${Number(data.within).toLocaleString()} ly.</p>`;
     return;
   }
-  body.innerHTML = data.results.map((s, i) => `
+  body.innerHTML = warning + data.results.map((s, i) => `
     <div class="system">
       <div class="sys-head">
         <span class="rank">${i + 1}</span>

@@ -40,6 +40,22 @@ def classify_subtype(subtype: str) -> str | None:
     return None
 
 
+def biology_is_excluded(subtype: str, excluded: set[str]) -> bool:
+    """Match exact species or whole-word group names, including common aliases."""
+    aliases = {
+        "fumerolas": "fumerola",
+        "fungoids": "fungoida",
+        "shards": "shard",
+    }
+    words = [aliases.get(word, word) for word in subtype.casefold().split()]
+    padded = " " + " ".join(words) + " "
+    return any(
+        " " + " ".join(aliases.get(word, word) for word in name.casefold().split()) + " "
+        in padded
+        for name in excluded
+    )
+
+
 def entry_key(name: str) -> str:
     """Canonical key for a Codex entry as it appears in the journal.
 

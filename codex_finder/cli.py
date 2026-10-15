@@ -9,7 +9,7 @@ from pathlib import Path
 from . import config
 from .canonn import CanonnError
 from .codex import normalise_category
-from .finder import SystemResult, find_new_codex_bodies
+from .finder import SearchStatus, SystemResult, find_new_codex_bodies
 from .journal import find_current_system, find_found_entries
 from .spansh import SpanshClient, SpanshError
 
@@ -69,12 +69,18 @@ def _print_results(
     found_count: int,
     results: list[SystemResult],
     max_distance: float | None = None,
+    search_limit_reached: bool = False,
 ) -> None:
     print(f"Current system: {system}")
     print(f"Category: {category} ({found_count} entries already in your journal)")
     print()
+    if search_limit_reached:
+        print("Search limit reached. Results may be incomplete within this radius.")
+        print()
     if not results:
-        if max_distance is not None:
+        if search_limit_reached:
+            print("No new entries found in the bodies examined.")
+        elif max_distance is not None:
             print(
                 f"No bodies with new Codex entries were found within "
                 f"{max_distance:,.0f} ly."
@@ -118,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         max_distance = config.DEFAULT_WITHIN_LY[category]
 
     client = SpanshClient()
+    status = SearchStatus()
     try:
         results = find_new_codex_bodies(
             client,
@@ -127,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
             found=found,
             top_n=args.nearest,
             max_distance=max_distance,
+            status=status,
         )
     except SpanshError as exc:
         print(f"Spansh query failed: {exc}", file=sys.stderr)
@@ -134,8 +142,14 @@ def main(argv: list[str] | None = None) -> int:
     except CanonnError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
-    _print_results(category, location.system, len(found), results, max_distance)
+    _print_results(
+        category, location.system, len(found), results, max_distance,
+        search_limit_reached=status.limit_reached,
+    )
     return 0
 
 

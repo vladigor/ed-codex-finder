@@ -64,6 +64,24 @@ On native Windows the directory is usually:
 C:\Users\<name>\Saved Games\Frontier Developments\Elite Dangerous
 ```
 
+### Biology exclusions
+
+Edit [personalization.json](personalization.json) to maintain your
+`biology_excluded_species` list. Both the web app and CLI reread it on every
+biology search. Refresh Biology after editing; previously saved browser results
+are not changed automatically.
+
+Entries can be exact species names (e.g. `Bacterium Aurasus`) or whole group
+names (e.g. `Anemone` or `Electricae`). Matching is case-insensitive;
+`Fumerolas` matches `Fumerola`, `Fungoids` matches `Fungoida`, and `Shards`
+matches both `Shard` and `Shards`. Exclusions apply before querying Spansh and
+also remove excluded landmarks from mixed-species bodies. They affect Biology
+only, not clouds or anomalies.
+
+For separate user configurations, set `CODEX_FINDER_CONFIG` to the path of your
+JSON file. A missing default file means no exclusions; an explicitly selected
+missing file or malformed configuration reports an error.
+
 ## Command-Line Interface
 
 For terminal use:
@@ -91,7 +109,7 @@ search logic and journal configuration.
    still counts as new in a colour you are missing.
 3. **Spansh query** – the full set of landmark subtypes for the category is
   fetched once (and cached for a week). Cloud and anomaly searches subtract
-  already-found subtypes; biology searches query all species and filter found
+  already-found subtypes; biology searches omit configured exclusions and filter found
   colour variants from each body's landmarks. Only new entries are listed.
   Requests are rate-limited to one per second.
 4. **Cloud coverage** – when journal coordinates are available, Canonn is
@@ -103,6 +121,11 @@ search logic and journal configuration.
 
 ## Notes and limitations
 
+- Each Spansh query batch examines at most 1,200 bodies. Excluding completed
+  biology groups reduces crowding. If this cap is reached with more candidates
+  remaining, both interfaces show "Search limit reached" and warn that results
+  may be incomplete. An empty capped search reports no new entries in the bodies
+  examined, rather than claiming none exist within the radius.
 - Biology is matched per colour variant using each Spansh landmark's `variant`
   field, so it finds the nearest bodies holding colours you have not logged yet.
 - Species that come in colours (e.g. `Tubus`) are only reported when Spansh has
