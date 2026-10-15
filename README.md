@@ -109,9 +109,13 @@ search logic and journal configuration.
    still counts as new in a colour you are missing.
 3. **Spansh query** – the full set of landmark subtypes for the category is
   fetched once (and cached for a week). Cloud and anomaly searches subtract
-  already-found subtypes; biology searches omit configured exclusions and filter found
-  colour variants from each body's landmarks. Only new entries are listed.
-  Requests are rate-limited to one per second.
+  already-found subtypes. Biology searches omit configured exclusions, then group
+  missing entries by colour: each request requires that colour on the same
+  landmark as one of the species still missing in it. Colourless biology uses a
+  separate query for undiscovered species. All batches are merged before the
+  nearest-system limit is applied; returned landmarks are also checked against
+  discoveries. Only new entries are listed. Requests share a lock and wait at
+  least 1.1 seconds after the preceding Spansh request finishes.
 4. **Cloud coverage** – when journal coordinates are available, Canonn is
   queried for the nearest systems for each missing cloud subtype. Reports are
   filtered to the requested radius, merged with Spansh results, and sorted
@@ -128,6 +132,11 @@ search logic and journal configuration.
   examined, rather than claiming none exist within the radius.
 - Biology is matched per colour variant using each Spansh landmark's `variant`
   field, so it finds the nearest bodies holding colours you have not logged yet.
+- Spansh's global colour list is cached for a week. Each colour query includes
+  only species missing in that colour; impossible species/colour combinations
+  simply return no matches. This avoids depending on a separate, potentially
+  incomplete species/variant catalogue. Searches may need one request per colour
+  plus pagination, even when few results exist in the radius.
 - Species that come in colours (e.g. `Tubus`) are only reported when Spansh has
   recorded the colour; species with a single Codex entry (e.g. `Tubers`) are
   always reported.

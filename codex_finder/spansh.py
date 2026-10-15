@@ -2,8 +2,8 @@
 
 Only the two endpoints we need are implemented:
 
-* ``field_values/landmark_subtype`` - the full list of landmark subtypes, used to
-  build the universe of Codex entries per category.
+* ``field_values/landmark_subtype`` and ``landmark_variant`` - cached species and
+    colour lists used to build queries for missing Codex entries.
 * ``bodies/search`` - the synchronous body search, filtered by landmark subtype
   and sorted by distance from a reference system.
 
@@ -90,22 +90,42 @@ class SpanshClient:
         self._write_cache("landmark_subtype.json", values)
         return values
 
+    def landmark_variants(self) -> list[str]:
+        """All landmark colours, cached locally for a week."""
+        cached = self._read_cache("landmark_variant.json")
+        if cached:
+            return cached
+        result = self._request(f"{config.SPANSH_FIELD_VALUES_URL}/landmark_variant")
+        values = sorted(result.get("min_max", {}).keys())
+        if not values:
+            raise SpanshError("Spansh returned no landmark colours")
+        self._write_cache("landmark_variant.json", values)
+        return values
+
     def search_bodies(
         self,
         *,
         reference_system: str,
         reference_coords: tuple[float, float, float] | None = None,
         landmark_subtypes: list[str],
+        landmark_variant: str | None = None,
         max_distance: float | None = None,
         size: int = 50,
         page: int = 0,
     ) -> dict:
         """Search for bodies near ``reference_system`` with the given subtypes.
 
+        ``landmark_variant`` requires the colour on the same landmark as one of
+        the requested subtypes, rather than elsewhere on the same body.
         ``max_distance`` (light years), when given, caps the search radius, which
         greatly reduces the number of results the server returns.
         """
         filters: dict = {"landmark_subtype": {"value": landmark_subtypes}}
+        if landmark_variant is not None:
+            filters = {"landmarks": [{
+                "subtype": {"logic": "OR", "value": landmark_subtypes},
+                "variant": {"value": [landmark_variant]},
+            }]}
         if max_distance is not None:
             filters["distance"] = {"min": "0", "max": str(max_distance)}
         payload = {

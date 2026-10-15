@@ -69,26 +69,32 @@ def find_new_codex_bodies(
             if any(token in subtype for token in config.COLOUR_VARIANT_TYPES)
         }
         batches = [
-            sorted(subtype for subtype in universe - coloured if codex.entry_key(subtype) not in found),
-            sorted(coloured),
+            (None, sorted(subtype for subtype in universe - coloured if codex.entry_key(subtype) not in found)),
         ]
+        if coloured:
+            for variant in client.landmark_variants():
+                batches.append((variant, sorted(
+                    subtype for subtype in coloured
+                    if codex.spansh_entry_key(subtype, variant) not in found
+                )))
     else:
         # Cloud and anomaly entries have no colour, so a found subtype is done.
-        batches = [sorted(subtype for subtype in universe if codex.entry_key(subtype) not in found)]
-    batches = [batch for batch in batches if batch]
-    wanted = sorted(subtype for batch in batches for subtype in batch)
+        batches = [(None, sorted(subtype for subtype in universe if codex.entry_key(subtype) not in found))]
+    batches = [(variant, batch) for variant, batch in batches if batch]
+    wanted = sorted({subtype for variant, batch in batches for subtype in batch})
     if not wanted:
         return []
 
     systems: dict[str, SystemResult] = {}
 
-    for batch in batches:
+    for batch_variant, batch in batches:
         batch_systems: set[str] = set()
         for page in range(_MAX_PAGES):
             response = client.search_bodies(
                 reference_system=reference_system,
                 reference_coords=reference_coords,
                 landmark_subtypes=batch,
+                landmark_variant=batch_variant,
                 max_distance=max_distance,
                 size=_PAGE_SIZE,
                 page=page,

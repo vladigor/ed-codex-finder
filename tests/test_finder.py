@@ -8,6 +8,7 @@ from codex_finder import codex, config
 from codex_finder.canonn import CanonnClient, CanonnError
 from codex_finder.cli import _print_results
 from codex_finder.finder import SearchStatus, SystemResult, find_new_codex_bodies
+from codex_finder.spansh import SpanshClient, SpanshError
 from codex_finder.web import _App
 
 
@@ -116,6 +117,75 @@ class BiologySearchTests(unittest.TestCase):
         self.exclusions = exclusions.start()
         self.addCleanup(exclusions.stop)
 
+    def biology_client(self):
+        client = Mock()
+        client.landmark_variants.return_value = ["Green", "Red"]
+        return client
+
+    def test_only_missing_species_are_queried_for_each_colour(self):
+        spansh = self.biology_client()
+        spansh.landmark_subtypes.return_value = ["Bacterium Aurasus", "Tussock Capillum"]
+        spansh.search_bodies.return_value = {"count": 0, "results": []}
+        find_new_codex_bodies(
+            spansh, reference_system="Example", category=config.CATEGORY_BIOLOGY,
+            found={"Bacterium Aurasus - Green", "Tussock Capillum - Red"},
+        )
+        self.assertEqual([
+            (call.kwargs["landmark_variant"], call.kwargs["landmark_subtypes"])
+            for call in spansh.search_bodies.call_args_list
+        ], [("Green", ["Tussock Capillum"]), ("Red", ["Bacterium Aurasus"])])
+
+    def test_completed_species_does_not_produce_queries(self):
+        spansh = self.biology_client()
+        spansh.landmark_subtypes.return_value = ["Bacterium Aurasus"]
+        self.assertEqual(find_new_codex_bodies(
+            spansh, reference_system="Example", category=config.CATEGORY_BIOLOGY,
+            found={"Bacterium Aurasus - Green", "Bacterium Aurasus - Red"},
+        ), [])
+        spansh.search_bodies.assert_not_called()
+
+    def test_colour_is_preserved_across_pages_with_incidental_landmarks(self):
+        spansh = self.biology_client()
+        spansh.landmark_variants.return_value = ["Red"]
+        spansh.landmark_subtypes.return_value = ["Bacterium Aurasus"]
+        spansh.search_bodies.side_effect = [
+            {"count": 101, "results": [
+                {"system_name": "Example", "distance": 10, "landmarks": [
+                    {"type": "Bacterium", "subtype": "Bacterium Aurasus", "variant": "Red"},
+                    {"type": "Bacterium", "subtype": "Bacterium Aurasus", "variant": "Green"},
+                ]},
+            ]},
+            {"count": 101, "results": []},
+        ]
+        find_new_codex_bodies(
+            spansh, reference_system="Example", category=config.CATEGORY_BIOLOGY,
+            found={"Bacterium Aurasus - Green"},
+        )
+        self.assertEqual([call.kwargs["landmark_variant"] for call in spansh.search_bodies.call_args_list],
+                         ["Red", "Red"])
+
+    def test_colour_batches_merge_before_nearest_limit(self):
+        spansh = self.biology_client()
+        spansh.landmark_subtypes.return_value = ["Bacterium Aurasus"]
+        spansh.search_bodies.side_effect = [
+            {"count": 1, "results": [
+                {"system_name": "Farther", "distance": 200, "landmarks": [
+                    {"type": "Bacterium", "subtype": "Bacterium Aurasus", "variant": "Green"},
+                ]},
+            ]},
+            {"count": 1, "results": [
+                {"system_name": "Nearer", "distance": 100, "landmarks": [
+                    {"type": "Bacterium", "subtype": "Bacterium Aurasus", "variant": "Red"},
+                ]},
+            ]},
+        ]
+        results = find_new_codex_bodies(
+            spansh, reference_system="Example", category=config.CATEGORY_BIOLOGY,
+            found=set(), top_n=1,
+        )
+        self.assertEqual([result.system for result in results], ["Nearer"])
+        self.assertEqual(spansh.search_bodies.call_count, 2)
+
     def test_exclusions_filter_queries_and_mixed_body_landmarks(self):
         self.exclusions.return_value = {
             "Anemone", "Electricae", "Fumerolas", "Fungoids", "Shards",
@@ -125,7 +195,7 @@ class BiologySearchTests(unittest.TestCase):
             "Puniceum Anemone", "Electricae Pluma", "Fumerola Aquatis",
             "Fungoida Setisis", "Crystalline Shard", "Bacterium Aurasus",
         ]
-        spansh = Mock()
+        spansh = self.biology_client()
         spansh.landmark_subtypes.return_value = excluded + ["Tussock Capillum"]
         spansh.search_bodies.return_value = {"count": 1, "results": [
             {"system_name": "Mixed", "name": "Mixed 1", "distance": 10,
@@ -142,7 +212,7 @@ class BiologySearchTests(unittest.TestCase):
 
     def test_all_excluded_skips_search(self):
         self.exclusions.return_value = {"Anemone"}
-        spansh = Mock()
+        spansh = self.biology_client()
         spansh.landmark_subtypes.return_value = ["Puniceum Anemone"]
         self.assertEqual(find_new_codex_bodies(
             spansh, reference_system="Example", category=config.CATEGORY_BIOLOGY,
@@ -153,7 +223,7 @@ class BiologySearchTests(unittest.TestCase):
     def test_page_cap_status_for_empty_and_partial_results(self):
         for has_new in (False, True):
             with self.subTest(has_new=has_new):
-                spansh = Mock()
+                spansh = self.biology_client()
                 spansh.landmark_subtypes.return_value = ["Tussock Capillum"]
                 spansh.search_bodies.return_value = {"count": 1300, "results": [
                     {"system_name": "Example", "distance": 10,
@@ -175,7 +245,7 @@ class BiologySearchTests(unittest.TestCase):
             (1300, "Red", 1, 1), (1300, "Red", 1, 12),
         ):
             with self.subTest(count=count, variant=variant, expected_pages=expected_pages):
-                spansh = Mock()
+                spansh = self.biology_client()
                 spansh.landmark_subtypes.return_value = ["Tussock Capillum"]
 
                 def search_bodies(**kwargs):
@@ -198,7 +268,7 @@ class BiologySearchTests(unittest.TestCase):
                 self.assertEqual(spansh.search_bodies.call_count, expected_pages)
 
     def test_anemones_are_not_buried_by_found_colour_variants(self):
-        spansh = Mock()
+        spansh = self.biology_client()
         spansh.landmark_subtypes.return_value = [
             "Puniceum Anemone", "Roseum Anemone", "Bark Mounds", "Stratum Tectonicas",
         ]
@@ -229,7 +299,8 @@ class BiologySearchTests(unittest.TestCase):
                             for call in spansh.search_bodies.call_args_list))
 
     def test_batches_merge_before_nearest_limit(self):
-        spansh = Mock()
+        spansh = self.biology_client()
+        spansh.landmark_variants.return_value = ["Green"]
         spansh.landmark_subtypes.return_value = ["Puniceum Anemone", "Tussock Capillum"]
         spansh.search_bodies.side_effect = [
             {"count": 1, "results": [
@@ -326,6 +397,71 @@ class BiologyConfigTests(unittest.TestCase):
             with self.subTest(content=content), patch("pathlib.Path.read_text", return_value=content):
                 with self.assertRaises(ValueError):
                     config.get_biology_excluded_species()
+
+
+class SpanshClientTests(unittest.TestCase):
+    def test_colour_filter_pairs_subtypes_and_variant_in_one_landmark(self):
+        client = SpanshClient()
+        with patch.object(client, "_request", return_value={}) as request:
+            client.search_bodies(
+                reference_system="Origin", reference_coords=(1, 2, 3),
+                landmark_subtypes=["Bacterium Aurasus", "Tussock Capillum"],
+                landmark_variant="Red", max_distance=500,
+            )
+            payload = request.call_args.kwargs["payload"]
+            self.assertEqual(payload["filters"], {
+                "landmarks": [{
+                    "subtype": {"logic": "OR", "value": ["Bacterium Aurasus", "Tussock Capillum"]},
+                    "variant": {"value": ["Red"]},
+                }],
+                "distance": {"min": "0", "max": "500"},
+            })
+            self.assertEqual(payload["reference_coords"], {"x": 1, "y": 2, "z": 3})
+
+    def test_colourless_filter_is_unchanged(self):
+        client = SpanshClient()
+        with patch.object(client, "_request", return_value={}) as request:
+            client.search_bodies(reference_system="Origin", landmark_subtypes=[POD])
+            self.assertEqual(request.call_args.kwargs["payload"]["filters"],
+                             {"landmark_subtype": {"value": [POD]}})
+
+    def test_colour_catalogue_is_cached(self):
+        client = SpanshClient()
+        with patch.object(client, "_read_cache", return_value=["Red"]) as cache, patch.object(
+            client, "_request",
+        ) as request:
+            self.assertEqual(client.landmark_variants(), ["Red"])
+            cache.assert_called_once_with("landmark_variant.json")
+            request.assert_not_called()
+        with patch.object(client, "_read_cache", return_value=None), patch.object(
+            client, "_request", return_value={"min_max": {"Red": 20, "Green": 30}},
+        ) as request, patch.object(client, "_write_cache") as write:
+            self.assertEqual(client.landmark_variants(), ["Green", "Red"])
+            request.assert_called_once_with(f"{config.SPANSH_FIELD_VALUES_URL}/landmark_variant")
+            write.assert_called_once_with("landmark_variant.json", ["Green", "Red"])
+
+    def test_empty_colour_catalogue_is_an_error(self):
+        client = SpanshClient()
+        with patch.object(client, "_read_cache", return_value=None), patch.object(
+            client, "_request", return_value={},
+        ):
+            with self.assertRaisesRegex(SpanshError, "no landmark colours"):
+                client.landmark_variants()
+
+    def test_catalogue_and_search_requests_share_one_second_rate_limit(self):
+        client = SpanshClient()
+        self.assertGreaterEqual(client._min_interval, 1.0)
+        with patch("codex_finder.spansh.time.monotonic", return_value=100.0), patch(
+            "codex_finder.spansh.time.sleep",
+        ) as sleep, patch("urllib.request.urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value.read.return_value = b'{}'
+            client._request(f"{config.SPANSH_FIELD_VALUES_URL}/landmark_variant")
+            client.search_bodies(
+                reference_system="Origin", landmark_subtypes=["Bacterium Aurasus"],
+                landmark_variant="Red",
+            )
+            sleep.assert_called_once_with(config.SPANSH_MIN_REQUEST_INTERVAL)
+            self.assertEqual(urlopen.call_count, 2)
 
 
 class CanonnClientTests(unittest.TestCase):
